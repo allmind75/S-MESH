@@ -1,0 +1,111 @@
+package com.smesh.network;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.sql.Date;
+import java.text.SimpleDateFormat;
+import java.util.UUID;
+
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
+import android.os.Handler;
+import android.os.Message;
+import android.util.Log;
+
+public class BTClient extends Thread { 
+	private BluetoothSocket mmCSocket;
+	private RecvThread recvThread;
+	private BluetoothDevice mDevice; 
+	private Handler mHandler, checkHandler;
+	private int idx; 
+	private final int NEXT_CONNECT = 40; 
+	private UUID mcheck_uuid; 
+	private String mcheck_mac; 
+	
+	public BTClient(BluetoothDevice _mDevice, Handler _handler, int _idx, String _uuid, String _mac, Handler _checkHandler) { // _idx : 현재 index 
+		mDevice = _mDevice; 
+		mHandler = _handler;
+		idx = _idx; 
+		mcheck_uuid = UUID.fromString(_uuid);
+		mcheck_mac = _mac;
+		checkHandler = _checkHandler; 
+	} 
+
+	public synchronized void run() { 
+		try { 
+			mmCSocket = mDevice.createInsecureRfcommSocketToServiceRecord(mcheck_uuid);  
+			mmCSocket.connect(); 
+			Log.e("현재 장비와", "소켓 연결 성공");
+			Message msg = Message.obtain(checkHandler, idx, 0, NEXT_CONNECT);  // 연결 완료임을 알려줌.
+			checkHandler.sendMessage(msg);
+			
+			// 연결된 객체에 대해서만 recv 스레드를 시작해야 함.
+			recvThread = new RecvThread(mmCSocket); // 송수신 스레드 시작 
+			recvThread.start();
+			
+		} catch (IOException e) { 
+			e.printStackTrace();  
+			Log.e("현재 장비와", "소켓 연결 실패");		 
+		} 		  
+	}  
+	 
+	public void all_send(byte[] buffer, int size) {
+		recvThread.client_send(buffer, size);
+	}
+	
+	public void all_send(String buffer) { 
+		byte[] _msg = buffer.getBytes(); 
+		recvThread.client_send(_msg, _msg.length);
+	} 
+	 
+	class RecvThread extends Thread{
+		private InputStream mmInputStream;
+		private OutputStream mmOutputStream;
+		private BluetoothSocket socket; 
+		private int size;
+		
+		public RecvThread(BluetoothSocket _socket) {
+			socket = _socket;
+			
+			try {
+				mmInputStream = socket.getInputStream();
+				mmOutputStream = socket.getOutputStream();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		public void run() { 
+			try { 
+				while (true) { 
+					byte[] buffer = new byte[1024];
+					size = mmInputStream.read(buffer);
+					String strBuf = new String(buffer, 0, size);
+					Log.e("client receive -> ", ""+strBuf); 
+					Message msg = Message.obtain(mHandler,idx,0,0,strBuf); // what == 인덱스(몇 번째 만들어졌는지), strBuf == 내용 -> 걔 빼고 보내기 위해 
+					mHandler.sendMessage(msg);
+				}
+			} catch (IOException e) {  
+				e.printStackTrace();
+			}  
+		}
+		
+		public void client_send(byte[] _buffer, int size)
+		{
+			try { 
+				if( mmOutputStream != null && socket != null)
+					mmOutputStream.write(_buffer, 0, size);
+			} catch (IOException e) { 
+				e.printStackTrace();
+			}
+		} 
+		
+		public int change_tablenum(String M, String s) {
+			int trans_time = 0;
+
+			trans_time = (Integer.parseInt(M) % 10) * 60 + Integer.parseInt(s);
+
+			return trans_time;
+		}
+	} // end of receive class 
+}

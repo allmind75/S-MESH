@@ -1,0 +1,118 @@
+package com.smesh.network;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.UUID;
+
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothServerSocket;
+import android.bluetooth.BluetoothSocket;
+import android.os.Handler;
+import android.os.Message;
+import android.util.Log;
+
+import com.smesh.main.MainActivity;
+
+public class CheckServer extends Thread {
+	private InputStream mmInputStream;
+	private OutputStream mmOutputStream;  
+	private BluetoothServerSocket mmSSocket; 
+	private BluetoothSocket cSocket;
+	private BluetoothAdapter mBA = null;
+	private ReceiveThread check_recvThread; 
+	private Handler mHandler;   
+	private final int REAL_CHECK_CONNECT = 30; 
+	public UUID checkUuid = UUID.fromString("b7746a40-c758-4868-aa19-7ac6b3475dfc");
+	private boolean is_bool = true; 
+	private final int ACCEPT_TIME = 1000 * 60 * 60;
+	
+	public CheckServer(BluetoothAdapter _mBA, Handler mCheckServerHandler)
+	{
+		mBA = _mBA;
+		mHandler = mCheckServerHandler;  
+	}
+	
+	public void run() 
+	{
+		try {
+			mmSSocket = mBA.listenUsingInsecureRfcommWithServiceRecord(MainActivity.BLUE_NAME, checkUuid);
+			Log.e("0번째 소켓", "열어놨다."); 
+			cSocket = mmSSocket.accept(ACCEPT_TIME); 
+			Log.e("0번째 소켓", "들어왔다.");
+			check_recvThread = new ReceiveThread();
+			check_recvThread.start(); 
+			
+		} catch (IOException e) { // 체크 서버 타임 아웃이 발생함.  
+			try { 
+				if(mmSSocket != null) {
+					mmSSocket.close(); 
+					run();
+				}
+			} catch (IOException e1) { 
+				e1.printStackTrace();
+			} 
+			
+			e.printStackTrace();
+		} 
+	} 
+	
+	public void cancel()
+	{
+		try {
+			if(mmSSocket != null)
+				mmSSocket.close();
+			
+			if(cSocket != null)
+				cSocket.close(); 
+			
+			is_bool = false;
+			check_recvThread.interrupt();  
+						
+		} catch (IOException e) {  
+			e.printStackTrace();
+		}
+	}
+	
+	class ReceiveThread extends Thread
+	{
+		public ReceiveThread()
+		{  
+			try {
+				mmInputStream = cSocket.getInputStream();
+				mmOutputStream = cSocket.getOutputStream(); 
+			} catch (IOException e) { 
+				e.printStackTrace();
+			} 
+		}
+		
+		public void run()
+		{
+			try {
+				while(is_bool)
+				{
+					int size;
+					byte[] buffer = new byte[1024];
+					size = mmInputStream.read(buffer);
+					String uuidmac = new String(buffer, 0, size); // uuid랑 맥 주소를 동시에 수신한다. 
+				
+					Log.e("0번 소켓이 받은 uuid랑 맥 : ", ""+uuidmac);
+					Message msg = Message.obtain(mHandler, REAL_CHECK_CONNECT, uuidmac);  // 연결 요청된 클라이언트의 uuid가 날라간다.
+					mHandler.sendMessage(msg); 
+				}
+			} catch (IOException e) {
+				Log.e("check server read", "error");
+			}
+		} 
+	}
+	
+	public void ServerReady() // 체크 서버가 연결되고 진짜 서버를 만들었다고 알려줌.
+	{ 
+		String Server_Ready = "READY";
+		try {
+			mmOutputStream.write(Server_Ready.getBytes());
+		} catch (Exception e) { 
+			e.printStackTrace();
+		}
+	} 
+}

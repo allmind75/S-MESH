@@ -1,0 +1,234 @@
+package com.smesh.service;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.bluetooth.BluetoothAdapter;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.location.Address;
+import android.location.Geocoder;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.net.ConnectivityManager;
+import android.net.wifi.WifiManager;
+import android.os.Bundle;
+import android.os.IBinder;
+import android.os.SystemClock;
+import android.util.Log;
+
+import com.smesh.helper.SmeshPreference;
+
+public class NetworkService extends Service implements LocationListener {
+	final static String TAG = "NetworkService";
+
+	private NetworkBroadcastReceiver mReceiver;
+	private static SmeshPreference sp;
+	private boolean setting = false;
+	private boolean isGPSEnabled = false;
+	private boolean isNetworkEnabled = false;
+	private LocationManager locationManager = null; // 위치 매니져
+	private Location location;
+	private double lat; // 위도
+	private double lon; // 경도
+
+	@Override
+	public void onCreate() {
+
+		sp = new SmeshPreference(this);
+		setting = sp.getValue("service", false);
+		if (setting) { // 처음에 시작되었을때
+			IntentFilter intentfilter = new IntentFilter(); // 브로드 캐스트를 위한 인탠트
+															// 필터
+			intentfilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
+			intentfilter.addAction(LocationManager.PROVIDERS_CHANGED_ACTION);
+			intentfilter.addAction(WifiManager.WIFI_STATE_CHANGED_ACTION);
+			mReceiver = new NetworkBroadcastReceiver();
+			registerReceiver(mReceiver, intentfilter);
+			mReceiver.seton(true); // 브로드캐드스 사용여부
+			setAlarm(); // 알람 설정
+		}
+	}
+
+	@Override
+	public int onStartCommand(Intent intent, int flags, int startId) {
+
+		Log.e(TAG, "flagOn");
+
+		FindGPS();
+
+		return super.onStartCommand(intent, flags, startId);
+	}
+
+	@Override
+	public void onDestroy() {
+		super.onDestroy();
+		if (setting) {
+			mReceiver.seton(false); // 브로드 캐스트 종료
+			unregisterReceiver(mReceiver);
+		}
+		releaseAlarm();
+
+	}
+
+	public static void checkConnect() {
+		Log.e(TAG, "checkConnect");
+		BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+		if (adapter.getState() == BluetoothAdapter.STATE_TURNING_OFF
+				|| adapter.getState() == BluetoothAdapter.STATE_OFF) {
+			adapter.enable(); // Bluetooth On
+		}
+	}
+
+	private void setAlarm() { // GPS 저장하기 위해서 알람 설정
+		AlarmManager alarm = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+
+		long firstTime = SystemClock.elapsedRealtime();
+		alarm.setRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP, firstTime,
+				1000 * 60 * 30, pending()); // 30분씩 날라옴
+	}
+
+	private void releaseAlarm() { // 알람 해제
+		AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+		alarmManager.cancel(pending());
+	}
+
+	private PendingIntent pending() { // 알람 세부 설정
+		Intent i = new Intent(NetworkService.this, NetworkService.class);
+		PendingIntent pending = PendingIntent.getService(NetworkService.this,
+				1, i, PendingIntent.FLAG_UPDATE_CURRENT); // 1은 여러개의 알람중에 알람
+															// 구별할때 씀
+		return pending;
+	}
+
+	private void FindGPS() {
+
+		try {
+			locationManager = (LocationManager) NetworkService.this
+					.getSystemService(LOCATION_SERVICE);
+
+			// GPS 기능이 켜져있어서 사용가능한지확인
+			isGPSEnabled = locationManager
+					.isProviderEnabled(LocationManager.GPS_PROVIDER);
+
+			// 네트워크로 주소 알아오는기능 사용가능확인
+			isNetworkEnabled = locationManager
+					.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+
+			if (!isGPSEnabled && !isNetworkEnabled) {
+				// GPS 와 네트워크사용이 가능하지 않을때 소스 구현... 없엉 ㅠㅠ
+			} else {
+				// 네트워크 정보로 부터 위치값 가져오기
+				if (isNetworkEnabled) {
+					locationManager.requestLocationUpdates(
+							LocationManager.NETWORK_PROVIDER, 0, 0, this);
+					// 100M = 최소 정보 없데이트 거리,1000 * 60 * 1 = 업데이트 시간
+					if (locationManager != null) {
+						location = locationManager
+								.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+						if (location != null) {
+							// 위도 경도 저장
+							lat = location.getLatitude();
+							lon = location.getLongitude();
+							saveGPS(lat, lon);
+							return;
+						} else {
+							Log.e(TAG, "location null");
+						}
+					}
+				}
+
+				if (isGPSEnabled) {
+					if (location == null) {
+						locationManager.requestLocationUpdates(
+								LocationManager.GPS_PROVIDER, 10,
+								1000 * 60 * 1, this);
+						if (locationManager != null) {
+							location = locationManager
+									.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+							if (location != null) {
+								lat = location.getLatitude();
+								lon = location.getLongitude();
+								saveGPS(lat, lon);
+								return;
+							}
+						}
+					}
+				}
+			}
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+	}
+
+	public void saveGPS(double lat, double lon) {
+		String address;
+
+		String GPSaddress = null;
+		Geocoder geocoder = new Geocoder(NetworkService.this,
+				Locale.getDefault()); // 구글 API
+
+		List<Address> addressList = null;
+
+		try {
+			addressList = geocoder.getFromLocation(lat, lon, 1);
+		} catch (Exception e) {
+			// TODO: handle exception
+		}
+
+		if (addressList == null) {
+			return;
+		}
+
+		if (addressList.size() > 0) {
+			Address addr = addressList.get(0);
+			address = addr.getAdminArea() + " " + addr.getLocality() + " "
+					+ addr.getThoroughfare() + " " + addr.getFeatureName();
+
+			Log.e(TAG, address);
+			sp.putValue("gps", address); // 값 저장 최근값만
+			Date date = new Date(System.currentTimeMillis()); // 시간 구하는 방법
+
+			String curDate = new SimpleDateFormat("yyyy년MM월dd일").format(date);
+			String curTime = new SimpleDateFormat("HH:mm:ss").format(date);
+
+			sp.putValue("gps_date", curDate);// 날짜저장
+			sp.putValue("gps_time", curTime);// 시간저장
+		}
+	}
+
+	@Override
+	public void onLocationChanged(Location location) {
+
+	}
+
+	@Override
+	public void onStatusChanged(String provider, int status, Bundle extras) {
+
+	}
+
+	@Override
+	public void onProviderEnabled(String provider) {
+
+	}
+
+	@Override
+	public void onProviderDisabled(String provider) {
+
+	}
+
+	@Override
+	public IBinder onBind(Intent intent) {
+		return null;
+	}
+
+}

@@ -1,0 +1,120 @@
+package com.smesh.network;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.UUID;
+
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
+import android.os.Handler;
+import android.os.Message;
+import android.util.Log;
+
+public class CheckClient extends Thread {
+	private BluetoothSocket mmCSocket; 
+	private BluetoothDevice mDevice; 
+	
+	private Handler mHandler;
+	private final int CLIENT_CHECK = 20; //클라이언트가 서버로 일단 연결되었고, 자신의 uuid를 날릴 준비가 되었다.
+	private final int SOCKET_FAILED = 50; // 소켓 연결 실패
+	private final int SERVER_OKAY = 70;
+	
+	private InputStream mmInputStream;
+	private OutputStream mmOutputStream;  
+	
+	private ReceiveThread check_recvThread; 
+	public UUID checkUuid = UUID.fromString("b7746a40-c758-4868-aa19-7ac6b3475dfc");
+	
+	private boolean is_bool = true; 
+	  
+	public CheckClient(BluetoothDevice checkDevice, Handler mCheckClientHandler)
+	{ 
+		mDevice = checkDevice;
+		mHandler = mCheckClientHandler;     
+	} 
+	
+	public synchronized void run()
+	{  
+		try {
+			mmCSocket = mDevice.createInsecureRfcommSocketToServiceRecord(checkUuid); 
+			mmCSocket.connect();    
+			    
+			Message msg = Message.obtain(mHandler, CLIENT_CHECK);  // 체크 연결임을 알리는 상수 값 10 what으로 날라감
+			mHandler.sendMessage(msg);    
+			
+			check_recvThread = new ReceiveThread();
+			check_recvThread.start();  
+   
+		} catch (IOException e) { 
+			Message msg2 = Message.obtain(mHandler, SOCKET_FAILED);  // 연결 실패임을 알려 줌
+			Log.e("현재 장비는 연결", "실패");
+			mHandler.sendMessage(msg2); 
+			e.printStackTrace();
+		}  
+	}
+	
+	public void cancel()
+	{
+		try {
+			if(mmCSocket != null)
+				mmCSocket.close(); 
+			
+			is_bool = false;
+			check_recvThread.interrupt();  
+
+		} catch (IOException e) {  
+			e.printStackTrace();
+		}
+	}
+	
+	public void UuidMacSend(String client_check_uuid, String _client_mac) // 클라이언트의 uuid를 서버로 전송한다.
+	{
+		UUID _uuid = UUID.fromString(client_check_uuid); 
+		String _client_uuid_mac = _uuid.toString()+_client_mac;  
+		Log.e("uuid : "+client_check_uuid, "mac : "+_client_mac);
+		try { 
+			mmOutputStream.write(_client_uuid_mac.getBytes());
+			Log.e("UUid ", "보냈다");
+		} catch (Exception e) {
+			Log.e("uuid", "send error"); 
+			Message msg = Message.obtain(mHandler, SOCKET_FAILED);  // 연결 실패임을 알려 줌 
+			mHandler.sendMessage(msg); 
+			e.printStackTrace();
+		}
+	} 
+	class ReceiveThread extends Thread
+	{
+		public ReceiveThread()
+		{
+			try {
+				mmInputStream = mmCSocket.getInputStream();
+				mmOutputStream = mmCSocket.getOutputStream(); 
+			} catch(Exception e)
+			{
+				
+			}
+		}
+		
+		public void run()
+		{
+			try {
+				while(is_bool)
+				{	
+					int size;
+					byte[] buffer = new byte[1024];
+					size = mmInputStream.read(buffer);
+					String ready = new String(buffer, 0, size);   
+				
+					if(ready.equals("READY")) {
+						Message msg = Message.obtain(mHandler, SERVER_OKAY);  
+						mHandler.sendMessage(msg);
+					}
+				}
+				
+			} catch (IOException e) { 
+				Log.e("check client read", "error");
+			}
+		} 
+	}
+}

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">HelloAccessory(P)</string>
+    <string name="action_settings">Settings</string>
+    <string name="hello_world">Hello world!</string>
+    <string name="ConnectionEstablishedMsg">HelloAccessory Connection established with RemotePeer</string>
+    <string name="startExercise">startExercise</string>
+    <string name="sendMsg">sendMsg</string>
+
+    <string name="title_activity_main">MainActivity</string>
+    <string name="title_activity_splash_view">SplashViewActivity</string>
+    <string name="title_activity_setting">Setting</string>
+    <string name="send">전송</string>
+    <string name="importance">중요</string>
+    <string name="sos">SOS</string>
+    <string name="timeLine">TimeLine</string>
+    <string name="setting">Setting</string>
+    <string name="top">TOP</string>   
+    
+</resources>

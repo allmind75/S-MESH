@@ -1,0 +1,172 @@
+package com.smesh.main;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.BatteryManager;
+import android.os.Bundle;
+import android.support.v4.app.Fragment;
+import android.view.KeyEvent;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.view.ViewGroup;
+import android.widget.ImageButton;
+import android.widget.TextView;
+
+import com.samsung.android.example.helloaccessoryprovider.R;
+import com.smesh.helper.SmeshPreference;
+
+public class Fragment_Main extends Fragment implements OnClickListener {
+
+	OnFragmentMainListener mCallback;
+
+	private TextView tv_client, tv_server, tv_mymac, tv_recvmac;
+	private ImageButton btn_sos;
+	private ImageButton btn_timeline;
+	private ImageButton btn_setting;
+	private CustomProgress progress_battery;
+	private SmeshPreference pref;
+	private MainActivity main; 
+	int battery_p;
+	
+	public interface OnFragmentMainListener {
+		public void onMainButtonClick(int position);
+	}
+	
+	public Fragment_Main(MainActivity context){
+		this.main = context;
+	}
+
+	@Override
+	public View onCreateView(LayoutInflater inflater, ViewGroup container,
+			Bundle savedInstanceState) {
+		// TODO Auto-generated method stub
+		View v = inflater.inflate(R.layout.fragment_activity_main, container,
+				false);
+		pref = new SmeshPreference(getActivity());
+		progress_battery = (CustomProgress) v
+				.findViewById(R.id.progress_battery);
+		battery_p = getBatteryPercentage(getActivity());
+		progress_battery.battery_per = 1;
+		progress_battery.setOnClickListener(new View.OnClickListener() {
+
+			@Override
+			public void onClick(View v) {
+				battery_p = getBatteryPercentage(getActivity());
+				progress_battery.setProgress(battery_p);
+			}
+		});
+
+		tv_client = (TextView) v.findViewById(R.id.tv_client);
+		tv_server = (TextView) v.findViewById(R.id.tv_server);
+		
+		tv_mymac = (TextView) v.findViewById(R.id.tv_mymac);
+		tv_recvmac = (TextView) v.findViewById(R.id.tv_recvmac);
+		btn_sos = (ImageButton) v.findViewById(R.id.button_sos);
+		btn_sos.setOnClickListener(this);
+		btn_timeline = (ImageButton) v.findViewById(R.id.button_timeLine);
+		btn_timeline.setOnClickListener(this);
+		btn_setting = (ImageButton) v.findViewById(R.id.button_setting);
+		btn_setting.setOnClickListener(this);
+ 
+		v.setOnKeyListener(new View.OnKeyListener() {
+			@Override
+			public boolean onKey(View v, int keyCode, KeyEvent event) {
+				if (keyCode == KeyEvent.KEYCODE_BACK) {
+					return true;
+				} else {
+					return false;
+				}
+			}
+		});
+		
+		battery_p = getBatteryPercentage(getActivity());
+		progress_battery.setProgress(battery_p);
+
+		return v;
+	}
+	
+	@Override
+	public void onStart() {
+		// TODO Auto-generated method stub
+		super.onStart();
+		if (!main.is_first) {
+			main.is_first = true;
+			main.init();
+
+			boolean service = pref.getValue("service", true);
+			if (service) {
+				pref.putValue("service", true);// 서비스 false
+				Intent starti = new Intent("SmeshNetworkService");
+				getActivity().startService(starti);
+			} else {
+				// 서비스 종료하는 코드
+				pref.putValue("service", false);// 서비스 false
+				Intent stopi = new Intent("NetworkService");
+				getActivity().stopService(stopi);
+			}
+		}
+
+	}
+	
+	
+	public void set_client(int _value)
+	{
+		tv_client.setText(""+_value);
+	}
+	
+	public void set_server(int _value)
+	{
+		tv_server.setText(""+_value);
+	}
+	
+	public void set_mymac(String _mac)
+	{
+		tv_mymac.setText(""+_mac);
+	}
+	
+	public void set_recvmac(String _mac)
+	{
+		tv_recvmac.setText(""+_mac);
+	}
+
+	@Override
+	public void onAttach(Activity activity) {
+		// TODO Auto-generated method stub
+		super.onAttach(activity);
+		try {
+			mCallback = (OnFragmentMainListener) activity;
+		} catch (Exception e) {
+			// TODO: handle exception
+		}
+	}
+
+	@Override
+	public void onClick(View v) {
+		switch (v.getId()) {
+		case R.id.button_sos:
+			mCallback.onMainButtonClick(1);
+			break;
+		case R.id.button_timeLine:
+			mCallback.onMainButtonClick(2);
+			break;
+		case R.id.button_setting:
+			mCallback.onMainButtonClick(3);
+			break;
+		}
+
+	}
+
+	public int getBatteryPercentage(Context context) {
+		Intent batteryStatus = context.registerReceiver(null, new IntentFilter(
+				Intent.ACTION_BATTERY_CHANGED));
+		int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+		int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+
+		float batteryPct = level / (float) scale;
+		return (int) (batteryPct * 100);
+	}
+
+}
